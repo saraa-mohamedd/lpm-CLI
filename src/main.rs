@@ -24,6 +24,7 @@ use core::time::Duration;
 //use tokio::time::timeout;
 use std::thread;
 use std::time::SystemTime;
+use pad::{PadStr, Alignment};
 //include table.rs
 //use crate::table::{tableProcess, BasicColumn};
 
@@ -137,34 +138,56 @@ fn getsystemstring()->String{
     let mut sys = System::new_all();
     sys.refresh_all();
 
-    let mut string = String::new();
-    string.push_str("OS: ");
-    string += &sys.name().unwrap();
-    string.push_str("\nUptime: ");
-    string.push_str(format!("{:02}:", sys.uptime()/3600).as_str());
-    string.push_str(format!("{:02}:", sys.uptime()%3600/60).as_str());
-    string.push_str(format!("{:02}\n", sys.uptime()%3600%60).as_str());
-    string.push_str("CPU Count: ");
-    string.push_str(format!("{} cores \n", sys.cpus().len()).as_str());
-    string.push_str("Total Memory: ");
-    string.push_str(format!("{:.2} GB \n", (sys.total_memory() as f64 /1e9)).as_str());
-    string.push_str("Swap: ");
-    string.push_str(format!("{:.2} GB\n", sys.total_swap() as f64/ 1e9).as_str());
-    string.push_str("Disk: ");
-    string.push_str(format!("{} disks\n", sys.disks().len()).as_str());
-    
     sys.refresh_cpu();
     std::thread::sleep(System::MINIMUM_CPU_UPDATE_INTERVAL);
     sys.refresh_cpu();
 
-    string.push_str("Total CPU%: ");
-    string.push_str(format!("{:.2}%\n", sys.global_cpu_info().cpu_usage()).as_str());
-    string.push_str("Memory%: ");
-    string.push_str(format!("{:.2}%\n", (sys.used_memory() as f64 / sys.total_memory() as f64) * 100.0).as_str());
-    string.push_str("Swap%: ");
-    string.push_str(format!("{:.2}%\n", (sys.used_swap() as f64/ sys.total_swap() as f64)*100.0).as_str());
+    let mut line1 = (format!("OS: {}", sys.name().unwrap())).pad_to_width_with_alignment(40, Alignment::Left);
+    line1 += &(format!("Uptime: {:02}:{:02}:{:02}", sys.uptime()/3600, sys.uptime()%3600/60, sys.uptime()%3600%60).pad_to_width_with_alignment(40, Alignment::Left));
+    line1 += &(format!("Total CPU%: {:.2}%", sys.global_cpu_info().cpu_usage()).as_str().pad_to_width_with_alignment(40, Alignment::Left));
+    
+    let mut line2 = (format!("#Disks: {} disks", sys.disks().len()).as_str().pad_to_width_with_alignment(40, Alignment::Left));
+    line2 += &(format!("Total Memory: {:.2} GB", (sys.total_memory() as f64 /1e9)).as_str().pad_to_width_with_alignment(40, Alignment::Left));
+    line2 += &(format!("Memory%: {:.2}%", (sys.used_memory() as f64 / sys.total_memory() as f64) * 100.0)).as_str().pad_to_width_with_alignment(40, Alignment::Left);
+    
+    let mut line3 = (format!("#CPUs: {} cores", sys.cpus().len()).as_str().pad_to_width_with_alignment(40, Alignment::Left));
+    line3 += &(format!("Total Swap: {:.2} GB", sys.total_swap() as f64 /1e9).as_str().pad_to_width_with_alignment(40, Alignment::Left));
+    line3 += &(format!("Swap%: {:.2}%", (sys.used_swap() as f64/ sys.total_swap() as f64)*100.0).as_str().pad_to_width_with_alignment(40, Alignment::Left));
 
-    string 
+    let mut sysString = String::new();
+    sysString.push_str(line1.as_str());
+    sysString.push_str("\n");
+    sysString.push_str(line2.as_str());
+    sysString.push_str(line3.as_str());
+
+    // let mut string = String::new();
+    // string.push_str("OS: ");
+    // string += &sys.name().unwrap();
+    // string.push_str("\nUptime: ");
+    // string.push_str(format!("{:02}:", sys.uptime()/3600).as_str());
+    // string.push_str(format!("{:02}:", sys.uptime()%3600/60).as_str());
+    // string.push_str(format!("{:02}\n", sys.uptime()%3600%60).as_str());
+    // string.push_str("CPU Count: ");
+    // string.push_str(format!("{} cores \n", sys.cpus().len()).as_str());
+    // string.push_str("Total Memory: ");
+    // string.push_str(format!("{:.2} GB \n", (sys.total_memory() as f64 /1e9)).as_str());
+    // string.push_str("Swap: ");
+    // string.push_str(format!("{:.2} GB\n", sys.total_swap() as f64/ 1e9).as_str());
+    // string.push_str("Disk: ");
+    // string.push_str(format!("{} disks\n", sys.disks().len()).as_str());
+    
+    // sys.refresh_cpu();
+    // std::thread::sleep(System::MINIMUM_CPU_UPDATE_INTERVAL);
+    // sys.refresh_cpu();
+
+    // string.push_str("Total CPU%: ");
+    // string.push_str(format!("{:.2}%\n", sys.global_cpu_info().cpu_usage()).as_str());
+    // string.push_str("Memory%: ");
+    // string.push_str(format!("{:.2}%\n", (sys.used_memory() as f64 / sys.total_memory() as f64) * 100.0).as_str());
+    // string.push_str("Swap%: ");
+    // string.push_str(format!("{:.2}%\n", (sys.used_swap() as f64/ sys.total_swap() as f64)*100.0).as_str());
+
+    sysString 
 }
 
 
@@ -264,9 +287,9 @@ fn main() {
         );
     });
 
-    layout.add_child(Dialog::around((systeminfo.with_name("sysinfo").max_height(50).min_width(120))).title("SYSTEM INFO"));
-    layout.add_child(Dialog::around(table.with_name("table").min_height(40).max_height(40).min_width(150)).title("PROCESS TABLE"));
-    layout.add_child(Dialog::around((helpdesk.min_height(1).max_height(1).min_width(120))).title("HELP DESK")); 
+    layout.add_child(Dialog::around((systeminfo.with_name("sysinfo").min_height(3).max_height(3).min_width(120).max_width(120))).title("SYSTEM INFO"));
+    layout.add_child(Dialog::around(table.with_name("table").min_height(20).max_height(30).min_width(120)).title("PROCESS TABLE"));
+    layout.add_child(Dialog::around((helpdesk.min_height(1).max_height(1).min_width(120)).max_width(120)).title("HELP DESK")); 
 
     siv.add_global_callback('q', |s| s.quit());
     siv.add_global_callback('r', |s| {

@@ -12,6 +12,7 @@ procfs = "0.15.1"
 rand = "0.8.5"
 sysinfo = "0.28.4"
 toml = "0.7.3"
+pad = "0.1.6"
 
 [dependencies.tokio]
 version = "1.27.0"
