@@ -73,10 +73,10 @@ struct tableProcess {
     priority: i64,
     niceness: i64,
     start_time: u64,
-    vsize: u64,
+    vsize: String,
     rss: u64,
     threads: i64,
-    cpu_time: u64,
+    cpu_time: String,
 }
 
 impl TableViewItem<BasicColumn> for tableProcess {
@@ -138,50 +138,31 @@ fn getsystemstring()->String{
     sys.refresh_all();
 
     let mut string = String::new();
-
-    string.push_str("System Information: \n");
     string.push_str("OS: ");
     string += &sys.name().unwrap();
     string.push_str("\nUptime: ");
-    string.push_str(sys.uptime().to_string().as_str());
-    string.push_str(" seconds\n");
-    string.push_str("CPU: ");
-    string.push_str(sys.cpus().len().to_string().as_str());
-    string.push_str(" cores\n");
-    string.push_str("Memory: ");
-    string.push_str((sys.total_memory() as f64 /1e9).to_string().as_str());
-    string.push_str(" GB\n");
+    string.push_str(format!("{:02}:", sys.uptime()/3600).as_str());
+    string.push_str(format!("{:02}:", sys.uptime()%3600/60).as_str());
+    string.push_str(format!("{:02}\n", sys.uptime()%3600%60).as_str());
+    string.push_str("CPU Count: ");
+    string.push_str(format!("{} cores \n", sys.cpus().len()).as_str());
+    string.push_str("Total Memory: ");
+    string.push_str(format!("{:.2} GB \n", (sys.total_memory() as f64 /1e9)).as_str());
     string.push_str("Swap: ");
-    string.push_str(sys.total_swap().to_string().as_str());
-    string.push_str(" bytes\n");
+    string.push_str(format!("{:.2} GB\n", sys.total_swap() as f64/ 1e9).as_str());
     string.push_str("Disk: ");
-    string.push_str(sys.disks().len().to_string().as_str());
-    string.push_str(" disks\n");
-    SystemExt::refresh_cpu(&mut sys); // Refreshing CPU information.
-    SystemExt::refresh_cpu(&mut sys); // Refreshing CPU information.
+    string.push_str(format!("{} disks\n", sys.disks().len()).as_str());
+    
+    sys.refresh_cpu();
+    std::thread::sleep(System::MINIMUM_CPU_UPDATE_INTERVAL);
+    sys.refresh_cpu();
 
-    let mut cpucount = 0;
-    for cpu in sys.cpus() {
-        string.push_str("CPU ");
-        string.push_str(cpucount.to_string().as_str());
-        string.push_str(" %: ");
-        string.push_str(cpu.cpu_usage().to_string().as_str());
-        string.push_str("\n");
-        cpucount += 1;
-    }
-    string.push_str(sys.global_cpu_info().cpu_usage().to_string().as_str());
-    // string.push_str(sys.cpu_load().unwrap().to_string().as_str());
-    // string.push_str("")
+    string.push_str("Total CPU%: ");
+    string.push_str(format!("{:.2}%\n", sys.global_cpu_info().cpu_usage()).as_str());
     string.push_str("Memory%: ");
-    //string += &((sys.used_memory() as f64 / sys.total_memory() as f64) * 100.0).to_string();
-    string.push_str(((sys.used_memory() as f64 / sys.total_memory() as f64) * 100.0).to_string().as_str());
-    //string.push_str(sys.memory().unwrap().to_string().as_str());
-    // string.push_str("");
-    // string.push_str("Swap%: ");
-    // string.push_str(sys.swap().unwrap().to_string().as_str());
-    // string.push_str("");
-    // string.push_str(sys.networks().len().to_string().as_str());
-    // string.push_str(" interfaces");
+    string.push_str(format!("{:.2}%\n", (sys.used_memory() as f64 / sys.total_memory() as f64) * 100.0).as_str());
+    string.push_str("Swap%: ");
+    string.push_str(format!("{:.2}%\n", (sys.used_swap() as f64/ sys.total_swap() as f64)*100.0).as_str());
 
     string 
 }
@@ -194,12 +175,12 @@ fn main() {
     let mut siv = cursive::default();
     siv.set_fps(1);
     siv.set_autorefresh(true);
-    siv.load_toml(include_str!("/home/sara/Desktop/testing_cursive/theme.toml")).unwrap();
+    
+    siv.load_toml(include_str!("/home/sara/Documents/GitHub/-The-Linux-Process-Manager/theme.toml")).unwrap();
     let mut systeminfo = TextView::new(getsystemstring());
     let mut helpdesk = TextView::new(gethelpdeskstring());
     let mut layout = LinearLayout::new(Orientation::Vertical);
 
-       
     let mut table = TableView::<tableProcess, BasicColumn>::new()
 
 
@@ -210,17 +191,21 @@ fn main() {
         })
         .column(BasicColumn::PID, "PID", |c| {
             c.align(HAlign::Right)
+            .width_percent(4)
         })
         .column(BasicColumn::PPID, "PPID", |c| {
             c.ordering(Ordering::Greater)
                 .align(HAlign::Right)
+                .width_percent(5)
         })
         .column(BasicColumn::State, "State", |c| {
             c.ordering(Ordering::Greater)
                 .align(HAlign::Right)
+                .width_percent(6)
         })
         .column(BasicColumn::Priority, "Priority", |c| {
             c.ordering(Ordering::Greater)
+                .width_percent(8)
                 .align(HAlign::Right)
         })
         .column(BasicColumn::Niceness, "Nice", |c| {
@@ -229,6 +214,7 @@ fn main() {
         })
         .column(BasicColumn::StartTime, "StartTime", |c| {
             c.ordering(Ordering::Greater)
+                .width_percent(8)
                 .align(HAlign::Right)
         })
         .column(BasicColumn::VSize, "VSize", |c| {
@@ -238,6 +224,7 @@ fn main() {
         .column(BasicColumn::RSS, "RSS", |c| {
             c.ordering(Ordering::Greater)
                 .align(HAlign::Right)
+                .width_percent(4)
         })
         .column(BasicColumn::Threads, "Threads", |c| {
             c.ordering(Ordering::Greater)
@@ -258,10 +245,10 @@ fn main() {
             priority: p.stat().unwrap().priority,
             niceness: p.stat().unwrap().nice,
             start_time: p.stat().unwrap().starttime,
-            vsize: p.stat().unwrap().vsize,
+            vsize: format!("{:.2}", ((p.stat().unwrap().vsize as f64)/1e6)),
             rss: p.stat().unwrap().rss,
             threads: p.stat().unwrap().num_threads,
-            cpu_time: p.stat().unwrap().utime + p.stat().unwrap().stime,
+            cpu_time: format!("{}", ((p.stat().unwrap().utime + p.stat().unwrap().stime) as f32/(procfs::ticks_per_second() as f32)))
         });
     }
 
@@ -297,10 +284,10 @@ fn main() {
                     priority: p.stat().unwrap().priority,
                     niceness: p.stat().unwrap().nice,
                     start_time: p.stat().unwrap().starttime,
-                    vsize: p.stat().unwrap().vsize,
+                    vsize: format!("{:.2}", ((p.stat().unwrap().vsize as f64)/1e6)),
                     rss: p.stat().unwrap().rss,
                     threads: p.stat().unwrap().num_threads,
-                    cpu_time: p.stat().unwrap().utime + p.stat().unwrap().stime,
+                    cpu_time: format!("{}", ((p.stat().unwrap().utime + p.stat().unwrap().stime) as f32/procfs::ticks_per_second() as f32))
                 });
             }
             table.set_items(items);
@@ -319,7 +306,8 @@ fn main() {
         string.push_str("run \"lpm -pp <ppid>\" to filter processes by ppid\n");
         string.push_str("run \"lpm -s <state>\" to filter processes by state\n");
         string.push_str("run \"lpm -n <name>\" to filter processes by name\n");
-        string.push_str("run \"lpm -h\" for more help\n");
+        string.push_str("run \"lpm -h\" for more help\n\n");
+        string.push_str("click on a column header to sort processes by that column field\n");
         s.add_layer(Dialog::text(string)
         .title("HELP")
         .button("Done", |s| {s.pop_layer();}));
@@ -338,10 +326,10 @@ fn main() {
                     priority: p.stat().unwrap().priority,
                     niceness: p.stat().unwrap().nice,
                     start_time: p.stat().unwrap().starttime,
-                    vsize: p.stat().unwrap().vsize,
+                    vsize: format!("{:.2}", ((p.stat().unwrap().vsize as f64)/1e6)),
                     rss: p.stat().unwrap().rss,
                     threads: p.stat().unwrap().num_threads,
-                    cpu_time: p.stat().unwrap().utime + p.stat().unwrap().stime,
+                    cpu_time: format!("{}", (p.stat().unwrap().utime + p.stat().unwrap().stime) as f32/procfs::ticks_per_second() as f32),
                 });
             }
             let currentpid = items[currentitem].pid;
@@ -359,10 +347,10 @@ fn main() {
                     priority: p.stat().unwrap().priority,
                     niceness: p.stat().unwrap().nice,
                     start_time: p.stat().unwrap().starttime,
-                    vsize: p.stat().unwrap().vsize,
+                    vsize: format!("{:.2}", ((p.stat().unwrap().vsize as f64)/1e6)),
                     rss: p.stat().unwrap().rss,
                     threads: p.stat().unwrap().num_threads,
-                    cpu_time: p.stat().unwrap().utime + p.stat().unwrap().stime,
+                    cpu_time: format!("{}", (p.stat().unwrap().utime as f32 + p.stat().unwrap().stime as f32)/procfs::ticks_per_second() as f32),
                 });
             }
             table.set_items(items);
@@ -370,10 +358,10 @@ fn main() {
         });
     });
     siv.add_global_callback('d', |s|{
-        s.load_toml(include_str!("/home/sara/Desktop/testing_cursive/themedark.toml")).unwrap();
+        s.load_toml(include_str!("/home/sara/Documents/GitHub/-The-Linux-Process-Manager/themedark.toml")).unwrap();
     });
     siv.add_global_callback('l', |s|{
-        s.load_toml(include_str!("/home/sara/Desktop/testing_cursive/theme.toml")).unwrap();
+        s.load_toml(include_str!("/home/sara/Documents/GitHub/-The-Linux-Process-Manager/theme.toml")).unwrap();
     });
     siv.add_layer(layout);
     
