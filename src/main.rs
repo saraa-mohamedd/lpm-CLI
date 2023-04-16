@@ -18,7 +18,7 @@ use cursive::views::*;
 use cursive::theme;
 use sysinfo::{System, ProcessExt, SystemExt, CpuExt};
 use cursive::Cursive;
-use procfs::process::{all_processes};
+use procfs::process::*;
 use cursive::direction::Orientation;
 use core::time::Duration;
 //use tokio::time::timeout;
@@ -122,16 +122,23 @@ fn gethelpdeskstring()->String{
     string.push_str("Q - Quit\t");
     string.push_str("R - Refresh\t");
     string.push_str("↑↓ - Navigate Through Process Table\t");
+    string.push_str("K - Kill Selected Process\t");
     string.push_str("H - More Help");
 
     string 
 }
 
 fn kill_process(pid: usize) {
+    if (pid == procfs::process::Process::myself().unwrap().stat().unwrap().pid as usize) {
+        println!("Cannot kill self");
+        return;
+    }
     let mut sys = System::new_all();
     sys.refresh_all();
     let mut process = sys.process(sysinfo::Pid::from(pid)).unwrap();
+    std::thread::sleep(System::MINIMUM_CPU_UPDATE_INTERVAL);
     process.kill();
+    std::thread::sleep(System::MINIMUM_CPU_UPDATE_INTERVAL);
 }
 
 fn getsystemstring()->String{
