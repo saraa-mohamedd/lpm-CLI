@@ -1,0 +1,214 @@
+
+// Crate Dependencies ---------------------------------------------------------
+extern crate cursive;
+extern crate cursive_tree_view;
+extern crate rand;
+
+
+// STD Dependencies -----------------------------------------------------------
+use std::fs;
+use std::io;
+use std::env;
+use std::fmt;
+use std::cmp::Ordering;
+use std::path::PathBuf;
+
+
+// External Dependencies ------------------------------------------------------
+use cursive::Cursive;
+use cursive::CursiveExt;
+use cursive::traits::*;
+use cursive::views::*;
+use procfs::process::all_processes;
+
+
+// Modules --------------------------------------------------------------------
+use cursive_tree_view::{TreeView, Placement};
+use cursive_tree_view::*;
+
+// Example --------------------------------------------------------------------
+fn main() {
+
+    #[derive(Debug)]
+    struct TreeEntry {
+        name: String,
+        dir: Option<PathBuf>
+    }
+
+    #[derive(Debug)]
+    struct treeProcess {
+        name: String,
+        pid: i32,
+        ppid: i32,
+        haschild: Option<i32>
+    }
+
+    impl fmt::Display for treeProcess {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            write!(f, "{}", self.name)
+        }
+    }
+
+    impl fmt::Display for TreeEntry {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            write!(f, "{}", self.name)
+        }
+    }
+
+    fn collect_process_nodes (entries: &mut Vec<treeProcess>, pid:i32, haschildren:Option<i32>) -> io::Result<()> {
+        let all_processes: Vec<procfs::process::Process> = all_processes().unwrap().into_iter().map(|x| x.unwrap()).collect();
+        for p in &all_processes {
+            if p.pid == pid{
+                let mut childcount = 0;
+                for q in &all_processes {
+                    if q.stat().unwrap().ppid == p.stat().unwrap().pid {
+                        childcount = childcount + 1;
+                    }
+                }
+                if childcount > 0 {
+                    for q in &all_processes {
+                        if q.stat().unwrap().ppid == p.stat().unwrap().pid {
+                            let mut qchildren = 0;
+                            for t in &all_processes{
+                                if t.stat().unwrap().ppid == q.stat().unwrap().pid {
+                                    qchildren = qchildren + 1;
+                            }
+                            if qchildren > 0 {
+                                entries.push(treeProcess {
+                                    name: format!("{}", q.stat().unwrap().comm),
+                                    pid: q.stat().unwrap().pid,
+                                    ppid: q.stat().unwrap().ppid,
+                                    haschild: Some(qchildren),
+                                })
+                            } else {
+                                entries.push(treeProcess {
+                                    name: format!("{}", q.stat().unwrap().comm),
+                                    pid: q.stat().unwrap().pid,
+                                    ppid: q.stat().unwrap().ppid,
+                                    haschild: None,
+                                })
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+        Ok(())
+
+    }
+
+    fn collect_entries(dir: &PathBuf, entries: &mut Vec<TreeEntry>) -> io::Result<()> {
+        if dir.is_dir() {
+            for entry in fs::read_dir(dir)? {
+
+                let entry = entry?;
+                let path = entry.path();
+
+                if path.is_dir() {
+                    entries.push(TreeEntry {
+                        name: entry.file_name().into_string().unwrap_or_else(|_|"".to_string()),
+                        dir: Some(path.into())
+                    });
+
+                } else if path.is_file() {
+                    entries.push(TreeEntry {
+                        name: entry.file_name().into_string().unwrap_or_else(|_|"".to_string()),
+                        dir: None
+                    });
+                }
+
+            }
+        }
+        Ok(())
+    }
+
+    fn expand_process_tree(tree: &mut TreeView<treeProcess>, parent_row: usize, pid: i32, haschildren: Option<i32>) {
+
+        let mut entries = Vec::new();
+        collect_process_nodes(&mut entries, pid, haschildren).ok();
+
+        entries.sort_by(|a, b| {
+            match (a.haschild.is_some(), b.haschild.is_some()) {
+                (true, true) | (false, false) => a.name.cmp(&b.name),
+                (true, false) => Ordering::Less,
+                (false, true) => Ordering::Greater
+            }
+        });
+
+        for i in entries {
+            if i.haschild.is_some() {
+                tree.insert_container_item(i, Placement::LastChild, parent_row);
+
+            } else {
+                tree.insert_item(i, Placement::LastChild, parent_row);
+            }
+        }
+
+    }
+
+    fn expand_tree(tree: &mut TreeView<TreeEntry>, parent_row: usize, dir: &PathBuf) {
+
+        let mut entries = Vec::new();
+        collect_entries(dir, &mut entries).ok();
+
+        entries.sort_by(|a, b| {
+            match (a.dir.is_some(), b.dir.is_some()) {
+                (true, true) | (false, false) => a.name.cmp(&b.name),
+                (true, false) => Ordering::Less,
+                (false, true) => Ordering::Greater
+            }
+        });
+
+        for i in entries {
+            if i.dir.is_some() {
+                tree.insert_container_item(i, Placement::LastChild, parent_row);
+
+            } else {
+                tree.insert_item(i, Placement::LastChild, parent_row);
+            }
+        }
+
+    }
+
+    // Create TreeView with initial working directory
+    let mut tree = TreeView::<treeProcess>::new();
+    //let path = env::current_dir().expect("Working directory missing.");
+    let mut all_processes: Vec<procfs::process::Process> = all_processes().unwrap().into_iter().map(|x| x.unwrap()).collect();
+    let root = all_processes[0].stat().unwrap();
+    let mut rootchildren:i32  = 0;
+    for p in &all_processes {
+        if p.stat().unwrap().ppid == root.pid {
+            rootchildren = rootchildren + 1;
+        }
+    }
+
+    tree.insert_item(treeProcess {
+        name: root.comm,
+        pid: root.pid,
+        ppid: root.ppid,
+        haschild: Some(rootchildren),
+    }, Placement::After, 0);
+
+    expand_process_tree(&mut tree, 0, root.pid, Some(rootchildren));
+    // let mut pid:i32;
+    // // Lazily insert directory listings for sub nodes
+    tree.set_on_collapse(|siv: &mut Cursive, row, is_collapsed, children| {
+        if !is_collapsed && children == 0 {
+            siv.call_on_name("tree", move |tree: &mut TreeView<treeProcess>| {
+                if let Some(haschild) = tree.borrow_item(row).unwrap().haschild {
+                    expand_process_tree(tree, row, tree.borrow_item(row).unwrap().pid, tree.borrow_item(row).unwrap().haschild);
+                }
+            });
+        }
+    });
+
+    // Setup Cursive
+    let mut siv = Cursive::new();
+    siv.add_layer(
+        Dialog::around(tree.scrollable().with_name("tree")).title("Process Tree").min_height(150)
+    );
+
+    siv.run();
+
+}
