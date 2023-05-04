@@ -1,4 +1,3 @@
-
 // Crate Dependencies ---------------------------------------------------------
 extern crate cursive;
 extern crate cursive_tree_view;
@@ -55,44 +54,71 @@ fn main() {
         }
     }
 
-    fn collect_process_nodes (entries: &mut Vec<treeProcess>, pid:i32, haschildren:Option<i32>) -> io::Result<()> {
+    fn collect_process_nodes (entries: &mut Vec<treeProcess>, pid:i32, q    :Option<i32>) -> io::Result<()> {
         let all_processes: Vec<procfs::process::Process> = all_processes().unwrap().into_iter().map(|x| x.unwrap()).collect();
-        for p in &all_processes {
-            if p.pid == pid{
-                let mut childcount = 0;
-                for q in &all_processes {
-                    if q.stat().unwrap().ppid == p.stat().unwrap().pid {
-                        childcount = childcount + 1;
-                    }
-                }
-                if childcount > 0 {
-                    for q in &all_processes {
-                        if q.stat().unwrap().ppid == p.stat().unwrap().pid {
-                            let mut qchildren = 0;
-                            for t in &all_processes{
-                                if t.stat().unwrap().ppid == q.stat().unwrap().pid {
-                                    qchildren = qchildren + 1;
-                            }
-                            if qchildren > 0 {
-                                entries.push(treeProcess {
-                                    name: format!("{}", q.stat().unwrap().comm),
-                                    pid: q.stat().unwrap().pid,
-                                    ppid: q.stat().unwrap().ppid,
-                                    haschild: Some(qchildren),
-                                })
-                            } else {
-                                entries.push(treeProcess {
-                                    name: format!("{}", q.stat().unwrap().comm),
-                                    pid: q.stat().unwrap().pid,
-                                    ppid: q.stat().unwrap().ppid,
-                                    haschild: None,
-                                })
-                            }
-                        }
-                    }
+    //     for p in &all_processes {
+    //         if p.pid == pid{
+    //             let mut childcount = 0;
+    //             for q in &all_processes {
+    //                 if q.stat().unwrap().ppid == p.stat().unwrap().pid {
+    //                     childcount = childcount + 1;
+    //                 }
+    //             }
+    //             if childcount > 0 {
+    //                 for q in &all_processes {
+    //                     if q.stat().unwrap().ppid == p.stat().unwrap().pid {
+    //                         let mut qchildren = 0;
+    //                         for t in &all_processes{
+    //                             if t.stat().unwrap().ppid == q.stat().unwrap().pid {
+    //                                 qchildren = qchildren + 1;
+    //                         }
+    //                         if qchildren > 0 {
+    //                             entries.push(treeProcess {
+    //                                 name: format!("{}", q.stat().unwrap().comm),
+    //                                 pid: q.stat().unwrap().pid,
+    //                                 ppid: q.stat().unwrap().ppid,
+    //                                 haschild: Some(qchildren),
+    //                             })
+    //                         } else {
+    //                             entries.push(treeProcess {
+    //                                 name: format!("{}", q.stat().unwrap().comm),
+    //                                 pid: q.stat().unwrap().pid,
+    //                                 ppid: q.stat().unwrap().ppid,
+    //                                 haschild: None,
+    //                             })
+    //                         }
+    //                     }
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }
+    for p in &all_processes {
+        //push all children of process p
+        if p.stat().unwrap().ppid == pid {
+            let mut childcount = 0;
+            for q in &all_processes {
+                if q.stat().unwrap().ppid == p.stat().unwrap().pid {
+                    childcount = childcount + 1;
                 }
             }
+            if childcount > 0 {
+                entries.push(treeProcess {
+                    name: format!("{}", p.stat().unwrap().comm),
+                    pid: p.stat().unwrap().pid,
+                    ppid: p.stat().unwrap().ppid,
+                    haschild: Some(childcount),
+                })
+            } else {
+                entries.push(treeProcess {
+                    name: format!("{}", p.stat().unwrap().comm),
+                    pid: p.stat().unwrap().pid,
+                    ppid: p.stat().unwrap().ppid,
+                    haschild: None,
+                })
+            }
         }
+
     }
         Ok(())
 
@@ -183,7 +209,7 @@ fn main() {
         }
     }
 
-    tree.insert_item(treeProcess {
+    tree.insert_container_item(treeProcess {
         name: root.comm,
         pid: root.pid,
         ppid: root.ppid,
@@ -193,10 +219,13 @@ fn main() {
     expand_process_tree(&mut tree, 0, root.pid, Some(rootchildren));
     // let mut pid:i32;
     // // Lazily insert directory listings for sub nodes
-    tree.set_on_collapse(|siv: &mut Cursive, row, is_collapsed, children| {
-        if !is_collapsed && children == 0 {
+    tree.set_on_collapse(|siv: &mut Cursive, row, is_collapsed, children: usize| {
+        if !is_collapsed && children != 0 {
             siv.call_on_name("tree", move |tree: &mut TreeView<treeProcess>| {
-                if let Some(haschild) = tree.borrow_item(row).unwrap().haschild {
+                // if let Some(haschild) = tree.borrow_item(row).unwrap().haschild.clone() {
+                //     expand_process_tree(tree, row, tree.borrow_item(row).unwrap().pid, tree.borrow_item(row).unwrap().haschild);
+                // }
+                  if tree.borrow_item(row).unwrap().haschild.is_some() {
                     expand_process_tree(tree, row, tree.borrow_item(row).unwrap().pid, tree.borrow_item(row).unwrap().haschild);
                 }
             });
