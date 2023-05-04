@@ -411,8 +411,7 @@ use cursive_tree_view::*;
 use procfs::process::*;
 use std::collections::HashMap;
 
-//Build process tree from procfs
-
+//
 
 fn main(){
     let mut tree = TreeView::new();
