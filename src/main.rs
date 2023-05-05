@@ -1,35 +1,22 @@
 
-// Crate Dependencies ---------------------------------------------------------
-// ----------------------------------------------------------------------------
+
 extern crate cursive;
 extern crate cursive_table_view;
 extern crate rand;
 
-// STD Dependencies -----------------------------------------------------------
-// ----------------------------------------------------------------------------
 use std::cmp::Ordering;
 
-use cursive::CursiveRunnable;
-// External Dependencies ------------------------------------------------------
-// ----------------------------------------------------------------------------
+
 use cursive::align::HAlign;
 use cursive::traits::*;
 use cursive::views::*;
-use cursive::theme;
-use sysinfo::{System, ProcessExt, SystemExt, CpuExt};
-use cursive::Cursive;
+use sysinfo::{System,SystemExt, CpuExt};
+
 use procfs::process::*;
 use cursive::direction::Orientation;
-use core::time::Duration;
-//use tokio::time::timeout;
-use std::thread;
-use std::time::SystemTime;
+
 use pad::{PadStr, Alignment};
 
-
-
-// Modules --------------------------------------------------------------------
-// ----------------------------------------------------------------------------
 use cursive_table_view::{TableView, TableViewItem};
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
@@ -44,7 +31,7 @@ enum BasicColumn {
     VSize, // Virtual Memory Size
     RSS, // Resident Set Size
     Threads, // Number of Threads
-    CPU_Time, // CPU Usage
+    CpuTime, // CPU Usage
 }
 
 impl BasicColumn {
@@ -60,13 +47,13 @@ impl BasicColumn {
             BasicColumn::VSize => "VSize",
             BasicColumn::RSS => "RSS",
             BasicColumn::Threads => "Threads",
-            BasicColumn::CPU_Time => "CPU Time",
+            BasicColumn::CpuTime => "CPU Time",
         }
     }
 }
 
 #[derive(Clone, Debug)]
-struct tableProcess {
+struct TableProcess {
     name: String,
     pid: i32,
     ppid: i32,
@@ -74,13 +61,13 @@ struct tableProcess {
     priority: i64,
     niceness: i64,
     start_time: u64,
-    vsize: String,
+    vsize: u64,
     rss: u64,
     threads: i64,
-    cpu_time: String,
+    cpu_time: i32,
 }
 
-impl TableViewItem<BasicColumn> for tableProcess {
+impl TableViewItem<BasicColumn> for TableProcess {
     fn to_column(&self, column: BasicColumn) -> String {
         match column {
             BasicColumn::Name => self.name.to_string(),
@@ -93,7 +80,7 @@ impl TableViewItem<BasicColumn> for tableProcess {
             BasicColumn::VSize => format!("{}", self.vsize),
             BasicColumn::RSS => format!("{}", self.rss),
             BasicColumn::Threads => format!("{}", self.threads),
-            BasicColumn::CPU_Time => format!("{}", self.cpu_time),
+            BasicColumn::CpuTime => format!("{}", self.cpu_time),
         }
     }
 
@@ -112,7 +99,7 @@ impl TableViewItem<BasicColumn> for tableProcess {
             BasicColumn::VSize => self.vsize.cmp(&other.vsize),
             BasicColumn::RSS => self.rss.cmp(&other.rss),
             BasicColumn::Threads => self.threads.cmp(&other.threads),
-            BasicColumn::CPU_Time => self.cpu_time.cmp(&other.cpu_time),
+            BasicColumn::CpuTime => self.cpu_time.cmp(&other.cpu_time),
         }
     }
 }
@@ -121,27 +108,51 @@ fn gethelpdeskstring()->String{
     let mut string = String::new();
     string.push_str("Q - Quit\t");
     string.push_str("R - Refresh\t");
-    string.push_str("↑↓ - Navigate Through Process Table\t");
-    string.push_str("K - Kill Selected Process\t");
-    string.push_str("H - More Help");
+    string.push_str("↑↓ - Navigate\t");
+    string.push_str("K - Kill Process\t");
+    string.push_str("C - Kill Branch\t");
+    string.push_str("S - Sleep Process\t");
+    string.push_str("T - Terminate Process\t");
+    string.push_str("H - More Help\t");
+    
+
 
     string 
 }
 
 fn terminate_process(pid: usize){
 
+    if (pid == procfs::process::Process::myself().unwrap().stat().unwrap().pid as usize) {
+        return;
+    }
+    std::thread::sleep(System::MINIMUM_CPU_UPDATE_INTERVAL);
     nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid as i32), nix::sys::signal::SIGTERM).unwrap();
+    std::thread::sleep(System::MINIMUM_CPU_UPDATE_INTERVAL);
 }
 
 
 fn sleep_process(pid: usize){
 
+    if (pid == procfs::process::Process::myself().unwrap().stat().unwrap().pid as usize) {
+        return;
+    }
+    std::thread::sleep(System::MINIMUM_CPU_UPDATE_INTERVAL);
     nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid as i32), nix::sys::signal::SIGSTOP).unwrap();
+    std::thread::sleep(System::MINIMUM_CPU_UPDATE_INTERVAL);
 }
 
-fn kill_process(pid: usize) {
+fn kill_process(pid: usize){
     if (pid == procfs::process::Process::myself().unwrap().stat().unwrap().pid as usize) {
-        println!("Cannot kill self");
+        return;
+    }
+    std::thread::sleep(System::MINIMUM_CPU_UPDATE_INTERVAL);
+    nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid as i32), nix::sys::signal::SIGKILL).unwrap();
+    std::thread::sleep(System::MINIMUM_CPU_UPDATE_INTERVAL);
+}
+
+fn kill_branch(pid: usize) {
+
+    if (pid == procfs::process::Process::myself().unwrap().stat().unwrap().pid as usize) {
         return;
     }
 
@@ -229,7 +240,7 @@ fn main() {
     let mut helpdesk = TextView::new(gethelpdeskstring());
     let mut layout = LinearLayout::new(Orientation::Vertical);
 
-    let mut table = TableView::<tableProcess, BasicColumn>::new()
+    let mut table = TableView::<TableProcess, BasicColumn>::new()
 
         .column(BasicColumn::Name, "Name", |c| {
             c.ordering(Ordering::Greater)
@@ -277,14 +288,14 @@ fn main() {
             c.ordering(Ordering::Greater)
                 .align(HAlign::Right)
         })
-        .column(BasicColumn::CPU_Time, "CPU Time", |c| {
+        .column(BasicColumn::CpuTime, "CPU Time", |c| {
             c.ordering(Ordering::Greater)
                 .align(HAlign::Right)
         });
 
     let mut items = Vec::new();
     for p in all_procs {
-        items.push(tableProcess {
+        items.push(TableProcess {
             name: format!("{}", p.stat().unwrap().comm),
             pid: p.stat().unwrap().pid,
             ppid: p.stat().unwrap().ppid,
@@ -292,10 +303,10 @@ fn main() {
             priority: p.stat().unwrap().priority,
             niceness: p.stat().unwrap().nice,
             start_time: p.stat().unwrap().starttime,
-            vsize: format!("{:.2}", ((p.stat().unwrap().vsize as f64)/1e6)),
+            vsize: p.stat().unwrap().vsize/1e6 as u64,
             rss: p.stat().unwrap().rss,
             threads: p.stat().unwrap().num_threads,
-            cpu_time: format!("{}", ((p.stat().unwrap().utime + p.stat().unwrap().stime) as f32/(procfs::ticks_per_second() as f32)))
+            cpu_time: (p.stat().unwrap().utime + p.stat().unwrap().stime) as i32/(procfs::ticks_per_second() as i32)
         });
     }
 
@@ -303,7 +314,7 @@ fn main() {
 
     let cb_sink = siv.cb_sink().clone();
 
-    let duration = std::time::Duration::from_millis(1000);
+    let duration = std::time::Duration::from_millis(5000);
     std::thread::spawn(move || {
         loop {
             std::thread::sleep(duration);
@@ -361,13 +372,13 @@ fn main() {
 
     siv.add_global_callback('q', |s| s.quit());
     siv.add_global_callback('r', |s| {
-        s.call_on_name("table", |table: &mut TableView<tableProcess, BasicColumn>| {
+        s.call_on_name("table", |table: &mut TableView<TableProcess, BasicColumn>| {
             let mut currentitem:usize = table.item().unwrap_or(1);
             table.clear();
             let mut new_procs:Vec<procfs::process::Process> = procfs::process::all_processes().unwrap().into_iter().map(|x| x.unwrap()).collect();
             let mut items = Vec::new();
             for p in new_procs {
-                items.push(tableProcess {
+                items.push(TableProcess {
                     name: format!("{}", p.stat().unwrap().comm),
                     pid: p.stat().unwrap().pid,
                     ppid: p.stat().unwrap().ppid,
@@ -375,10 +386,10 @@ fn main() {
                     priority: p.stat().unwrap().priority,
                     niceness: p.stat().unwrap().nice,
                     start_time: p.stat().unwrap().starttime,
-                    vsize: format!("{:.2}", ((p.stat().unwrap().vsize as f64)/1e6)),
+                    vsize: p.stat().unwrap().vsize/1e6 as u64,
                     rss: p.stat().unwrap().rss,
                     threads: p.stat().unwrap().num_threads,
-                    cpu_time: format!("{}", ((p.stat().unwrap().utime + p.stat().unwrap().stime) as f32/procfs::ticks_per_second() as f32))
+                    cpu_time: (p.stat().unwrap().utime + p.stat().unwrap().stime) as i32/(procfs::ticks_per_second() as i32)
                 });
             }
             table.set_items(items);
@@ -405,23 +416,23 @@ fn main() {
         .button("Done", |s| {s.pop_layer();}));
     });
     siv.add_global_callback('k', |s|{
-        s.call_on_name("table", |table: &mut TableView<tableProcess, BasicColumn>| {
+        s.call_on_name("table", |table: &mut TableView<TableProcess, BasicColumn>| {
             let mut currentitem:usize = table.item().unwrap_or(1);
             let mut new_procs:Vec<procfs::process::Process> = procfs::process::all_processes().unwrap().into_iter().map(|x| x.unwrap()).collect();
             let mut items = Vec::new();
             for p in new_procs {
-                items.push(tableProcess {
+                items.push(TableProcess {
                     name: format!("{}", p.stat().unwrap().comm),
                     pid: p.stat().unwrap().pid,
-                    ppid: p.stat().unwrap().ppid,
+                    ppid: p.stat().unwrap().ppid, 
                     state: p.stat().unwrap().state,
                     priority: p.stat().unwrap().priority,
                     niceness: p.stat().unwrap().nice,
                     start_time: p.stat().unwrap().starttime,
-                    vsize: format!("{:.2}", ((p.stat().unwrap().vsize as f64)/1e6)),
+                    vsize: p.stat().unwrap().vsize/1e6 as u64,
                     rss: p.stat().unwrap().rss,
                     threads: p.stat().unwrap().num_threads,
-                    cpu_time: format!("{}", (p.stat().unwrap().utime + p.stat().unwrap().stime) as f32/procfs::ticks_per_second() as f32),
+                    cpu_time: (p.stat().unwrap().utime + p.stat().unwrap().stime) as i32/(procfs::ticks_per_second() as i32)
                 });
             }
             let currentpid = items[currentitem].pid;
@@ -431,7 +442,7 @@ fn main() {
             let mut new_procs:Vec<procfs::process::Process> = procfs::process::all_processes().unwrap().into_iter().map(|x| x.unwrap()).collect();
             let mut items = Vec::new();
             for p in new_procs {
-                items.push(tableProcess {
+                items.push(TableProcess {
                     name: format!("{}", p.stat().unwrap().comm),
                     pid: p.stat().unwrap().pid,
                     ppid: p.stat().unwrap().ppid,
@@ -439,10 +450,145 @@ fn main() {
                     priority: p.stat().unwrap().priority,
                     niceness: p.stat().unwrap().nice,
                     start_time: p.stat().unwrap().starttime,
-                    vsize: format!("{:.2}", ((p.stat().unwrap().vsize as f64)/1e6)),
+                    vsize: p.stat().unwrap().vsize/1e6 as u64,
                     rss: p.stat().unwrap().rss,
                     threads: p.stat().unwrap().num_threads,
-                    cpu_time: format!("{}", (p.stat().unwrap().utime as f32 + p.stat().unwrap().stime as f32)/procfs::ticks_per_second() as f32),
+                    cpu_time: (p.stat().unwrap().utime + p.stat().unwrap().stime) as i32/(procfs::ticks_per_second() as i32)
+                });
+            }
+            table.set_items(items);
+            table.set_selected_item(currentitem);
+        });
+    });
+    siv.add_global_callback('b', |s|{
+        s.call_on_name("table", |table: &mut TableView<TableProcess, BasicColumn>| {
+            let mut currentitem:usize = table.item().unwrap_or(1);
+            let mut new_procs:Vec<procfs::process::Process> = procfs::process::all_processes().unwrap().into_iter().map(|x| x.unwrap()).collect();
+            let mut items = Vec::new();
+            for p in new_procs {
+                items.push(TableProcess {
+                    name: format!("{}", p.stat().unwrap().comm),
+                    pid: p.stat().unwrap().pid,
+                    ppid: p.stat().unwrap().ppid, 
+                    state: p.stat().unwrap().state,
+                    priority: p.stat().unwrap().priority,
+                    niceness: p.stat().unwrap().nice,
+                    start_time: p.stat().unwrap().starttime,
+                    vsize: p.stat().unwrap().vsize/1e6 as u64,
+                    rss: p.stat().unwrap().rss,
+                    threads: p.stat().unwrap().num_threads,
+                    cpu_time: (p.stat().unwrap().utime + p.stat().unwrap().stime) as i32/(procfs::ticks_per_second() as i32)
+                });
+            }
+            let currentpid = items[currentitem].pid;
+            kill_branch(currentpid as usize);
+            let mut currentitem:usize = table.item().unwrap_or(1);
+            table.clear();
+            let mut new_procs:Vec<procfs::process::Process> = procfs::process::all_processes().unwrap().into_iter().map(|x| x.unwrap()).collect();
+            let mut items = Vec::new();
+            for p in new_procs {
+                items.push(TableProcess {
+                    name: format!("{}", p.stat().unwrap().comm),
+                    pid: p.stat().unwrap().pid,
+                    ppid: p.stat().unwrap().ppid,
+                    state: p.stat().unwrap().state,
+                    priority: p.stat().unwrap().priority,
+                    niceness: p.stat().unwrap().nice,
+                    start_time: p.stat().unwrap().starttime,
+                    vsize: p.stat().unwrap().vsize/1e6 as u64,
+                    rss: p.stat().unwrap().rss,
+                    threads: p.stat().unwrap().num_threads,
+                    cpu_time: (p.stat().unwrap().utime + p.stat().unwrap().stime) as i32/(procfs::ticks_per_second() as i32)
+                });
+            }
+            table.set_items(items);
+            table.set_selected_item(currentitem);
+        });
+    });
+    siv.add_global_callback('s', |s|{
+        s.call_on_name("table", |table: &mut TableView<TableProcess, BasicColumn>| {
+            let mut currentitem:usize = table.item().unwrap_or(1);
+            let mut new_procs:Vec<procfs::process::Process> = procfs::process::all_processes().unwrap().into_iter().map(|x| x.unwrap()).collect();
+            let mut items = Vec::new();
+            for p in new_procs {
+                items.push(TableProcess {
+                    name: format!("{}", p.stat().unwrap().comm),
+                    pid: p.stat().unwrap().pid,
+                    ppid: p.stat().unwrap().ppid, 
+                    state: p.stat().unwrap().state,
+                    priority: p.stat().unwrap().priority,
+                    niceness: p.stat().unwrap().nice,
+                    start_time: p.stat().unwrap().starttime,
+                    vsize: p.stat().unwrap().vsize/1e6 as u64,
+                    rss: p.stat().unwrap().rss,
+                    threads: p.stat().unwrap().num_threads,
+                    cpu_time: (p.stat().unwrap().utime + p.stat().unwrap().stime) as i32/(procfs::ticks_per_second() as i32)
+                });
+            }
+            let currentpid = items[currentitem].pid;
+            sleep_process(currentpid as usize);
+            let mut currentitem:usize = table.item().unwrap_or(1);
+            table.clear();
+            let mut new_procs:Vec<procfs::process::Process> = procfs::process::all_processes().unwrap().into_iter().map(|x| x.unwrap()).collect();
+            let mut items = Vec::new();
+            for p in new_procs {
+                items.push(TableProcess {
+                    name: format!("{}", p.stat().unwrap().comm),
+                    pid: p.stat().unwrap().pid,
+                    ppid: p.stat().unwrap().ppid,
+                    state: p.stat().unwrap().state,
+                    priority: p.stat().unwrap().priority,
+                    niceness: p.stat().unwrap().nice,
+                    start_time: p.stat().unwrap().starttime,
+                    vsize: p.stat().unwrap().vsize/1e6 as u64,
+                    rss: p.stat().unwrap().rss,
+                    threads: p.stat().unwrap().num_threads,
+                    cpu_time: (p.stat().unwrap().utime + p.stat().unwrap().stime) as i32/(procfs::ticks_per_second() as i32)
+                });
+            }
+            table.set_items(items);
+            table.set_selected_item(currentitem);
+        });
+    });
+    siv.add_global_callback('t', |s|{
+        s.call_on_name("table", |table: &mut TableView<TableProcess, BasicColumn>| {
+            let mut currentitem:usize = table.item().unwrap_or(1);
+            let mut new_procs:Vec<procfs::process::Process> = procfs::process::all_processes().unwrap().into_iter().map(|x| x.unwrap()).collect();
+            let mut items = Vec::new();
+            for p in new_procs {
+                items.push(TableProcess {
+                    name: format!("{}", p.stat().unwrap().comm),
+                    pid: p.stat().unwrap().pid,
+                    ppid: p.stat().unwrap().ppid, 
+                    state: p.stat().unwrap().state,
+                    priority: p.stat().unwrap().priority,
+                    niceness: p.stat().unwrap().nice,
+                    start_time: p.stat().unwrap().starttime,
+                    vsize: p.stat().unwrap().vsize/1e6 as u64,
+                    rss: p.stat().unwrap().rss,
+                    threads: p.stat().unwrap().num_threads,
+                    cpu_time: (p.stat().unwrap().utime + p.stat().unwrap().stime) as i32/(procfs::ticks_per_second() as i32)
+                });
+            }
+            let currentpid = items[currentitem].pid;
+            terminate_process(currentpid as usize);
+            let mut currentitem:usize = table.item().unwrap_or(1);
+            table.clear();
+            let mut new_procs:Vec<procfs::process::Process> = procfs::process::all_processes().unwrap().into_iter().map(|x| x.unwrap()).collect();
+            let mut items = Vec::new();
+            for p in new_procs {
+                items.push(TableProcess {
+                    name: format!("{}", p.stat().unwrap().comm),
+                    pid: p.stat().unwrap().pid,
+                    ppid: p.stat().unwrap().ppid,
+                    state: p.stat().unwrap().state,
+                    priority: p.stat().unwrap().priority,
+                    niceness: p.stat().unwrap().nice,
+                    start_time: p.stat().unwrap().starttime,
+                    vsize: p.stat().unwrap().vsize/1e6 as u64,
+                    rss: p.stat().unwrap().rss,
+                    threads: p.stat().unwrap().num_threads,
+                    cpu_time: (p.stat().unwrap().utime + p.stat().unwrap().stime) as i32/(procfs::ticks_per_second() as i32)
                 });
             }
             table.set_items(items);
