@@ -25,8 +25,8 @@ use core::time::Duration;
 use std::thread;
 use std::time::SystemTime;
 use pad::{PadStr, Alignment};
-//include table.rs
-//use crate::table::{tableProcess, BasicColumn};
+
+
 
 // Modules --------------------------------------------------------------------
 // ----------------------------------------------------------------------------
@@ -128,17 +128,36 @@ fn gethelpdeskstring()->String{
     string 
 }
 
+fn terminate_process(pid: usize){
+
+    nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid as i32), nix::sys::signal::SIGTERM).unwrap();
+}
+
+
+fn sleep_process(pid: usize){
+
+    nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid as i32), nix::sys::signal::SIGSTOP).unwrap();
+}
+
 fn kill_process(pid: usize) {
     if (pid == procfs::process::Process::myself().unwrap().stat().unwrap().pid as usize) {
         println!("Cannot kill self");
         return;
     }
-    let mut sys = System::new_all();
-    sys.refresh_all();
-    let mut process = sys.process(sysinfo::Pid::from(pid)).unwrap();
+
     std::thread::sleep(System::MINIMUM_CPU_UPDATE_INTERVAL);
-    process.kill();
+    nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid as i32), nix::sys::signal::SIGKILL).unwrap();
     std::thread::sleep(System::MINIMUM_CPU_UPDATE_INTERVAL);
+    let mut new_procs:Vec<procfs::process::Process> = procfs::process::all_processes().unwrap().into_iter().map(|x| x.unwrap()).collect();
+    for proc in new_procs.iter_mut(){
+        if proc.stat().unwrap().ppid == pid as i32{
+            std::thread::sleep(System::MINIMUM_CPU_UPDATE_INTERVAL);
+            kill_process(proc.pid as usize);
+            std::thread::sleep(System::MINIMUM_CPU_UPDATE_INTERVAL);
+        }
+
+    }
+
 }
 
 fn getsystemstring()->String{
@@ -149,17 +168,17 @@ fn getsystemstring()->String{
     std::thread::sleep(System::MINIMUM_CPU_UPDATE_INTERVAL);
     sys.refresh_cpu();
 
-    let mut line1 = (format!("OS: {}", sys.name().unwrap())).pad_to_width_with_alignment(40, Alignment::Left);
-    line1 += &(format!("Uptime: {:02}:{:02}:{:02}", sys.uptime()/3600, sys.uptime()%3600/60, sys.uptime()%3600%60).pad_to_width_with_alignment(40, Alignment::Left));
-    line1 += &(format!("Total CPU%: {:.2}%", sys.global_cpu_info().cpu_usage()).as_str().pad_to_width_with_alignment(40, Alignment::Left));
+    let mut line1 = (format!("OS: {}", sys.name().unwrap())).pad_to_width_with_alignment(50, Alignment::Left);
+    line1 += &(format!("Uptime: {:02}:{:02}:{:02}", sys.uptime()/3600, sys.uptime()%3600/60, sys.uptime()%3600%60).pad_to_width_with_alignment(50, Alignment::Left));
+    line1 += &(format!("Total CPU%: {:.2}%", sys.global_cpu_info().cpu_usage()).as_str().pad_to_width_with_alignment(50, Alignment::Left));
     
-    let mut line2 = (format!("#Disks: {} disks", sys.disks().len()).as_str().pad_to_width_with_alignment(40, Alignment::Left));
-    line2 += &(format!("Total Memory: {:.2} GB", (sys.total_memory() as f64 /1e9)).as_str().pad_to_width_with_alignment(40, Alignment::Left));
-    line2 += &(format!("Memory%: {:.2}%", (sys.used_memory() as f64 / sys.total_memory() as f64) * 100.0)).as_str().pad_to_width_with_alignment(40, Alignment::Left);
+    let mut line2 = (format!("#Disks: {} disks", sys.disks().len()).as_str().pad_to_width_with_alignment(50, Alignment::Left));
+    line2 += &(format!("Total Memory: {:.2} GB", (sys.total_memory() as f64 /1e9)).as_str().pad_to_width_with_alignment(50, Alignment::Left));
+    line2 += &(format!("Memory%: {:.2}%", (sys.used_memory() as f64 / sys.total_memory() as f64) * 100.0)).as_str().pad_to_width_with_alignment(50, Alignment::Left);
     
-    let mut line3 = (format!("#CPUs: {} cores", sys.cpus().len()).as_str().pad_to_width_with_alignment(40, Alignment::Left));
-    line3 += &(format!("Total Swap: {:.2} GB", sys.total_swap() as f64 /1e9).as_str().pad_to_width_with_alignment(40, Alignment::Left));
-    line3 += &(format!("Swap%: {:.2}%", (sys.used_swap() as f64/ sys.total_swap() as f64)*100.0).as_str().pad_to_width_with_alignment(40, Alignment::Left));
+    let mut line3 = (format!("#CPUs: {} cores", sys.cpus().len()).as_str().pad_to_width_with_alignment(50, Alignment::Left));
+    line3 += &(format!("Total Swap: {:.2} GB", sys.total_swap() as f64 /1e9).as_str().pad_to_width_with_alignment(50, Alignment::Left));
+    line3 += &(format!("Swap%: {:.2}%", (sys.used_swap() as f64/ sys.total_swap() as f64)*100.0).as_str().pad_to_width_with_alignment(50, Alignment::Left));
 
     let mut sysString = String::new();
     sysString.push_str(line1.as_str());
@@ -203,16 +222,14 @@ fn main() {
     let mut all_procs: Vec<procfs::process::Process> = all_processes().unwrap().into_iter().map(|x| x.unwrap()).collect();
     
     let mut siv = cursive::default();
-    siv.set_fps(1);
     siv.set_autorefresh(true);
     
-    siv.load_toml(include_str!("/home/sara/Documents/GitHub/-The-Linux-Process-Manager/theme.toml")).unwrap();
+    siv.load_toml(include_str!("/home/sara/Desktop/lpm/The-Linux-Process-Manager/theme.toml")).unwrap();
     let mut systeminfo = TextView::new(getsystemstring());
     let mut helpdesk = TextView::new(gethelpdeskstring());
     let mut layout = LinearLayout::new(Orientation::Vertical);
 
     let mut table = TableView::<tableProcess, BasicColumn>::new()
-
 
         .column(BasicColumn::Name, "Name", |c| {
             c.ordering(Ordering::Greater)
@@ -284,19 +301,63 @@ fn main() {
 
     table.set_items(items);
 
-    table.set_on_sort(|siv: &mut Cursive, column: BasicColumn, order: Ordering| {
-        siv.add_layer(
-            Dialog::around(TextView::new(format!("{} / {:?}", column.as_str(), order)))
-                .title("Sorted by")
-                .button("Close", |s| {
-                    s.pop_layer();
-                }),
-        );
+    let cb_sink = siv.cb_sink().clone();
+
+    let duration = std::time::Duration::from_millis(1000);
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(duration);
+            cb_sink
+                .send(Box::new(move |s| {
+            //         s.call_on_name("table", |table: &mut TableView<tableProcess, BasicColumn>|  {
+            //             let mut new_procs:Vec<procfs::process::Process> = procfs::process::all_processes().unwrap().into_iter().map(|x| x.unwrap()).collect();
+            //             let mut items = Vec::new();
+            //             for p in new_procs {
+            //         items.push(tableProcess {
+            //             name: format!("{}", p.stat().unwrap().comm),
+            //             pid: p.stat().unwrap().pid,
+            //             ppid: p.stat().unwrap().ppid,
+            //             state: p.stat().unwrap().state,
+            //             priority: p.stat().unwrap().priority,
+            //             niceness: p.stat().unwrap().nice,
+            //             start_time: p.stat().unwrap().starttime,
+            //             vsize: format!("{:.2}", ((p.stat().unwrap().vsize as f64)/1e6)),
+            //             rss: p.stat().unwrap().rss,
+            //             threads: p.stat().unwrap().num_threads,
+            //             cpu_time: format!("{}", ((p.stat().unwrap().utime + p.stat().unwrap().stime) as f32/procfs::ticks_per_second() as f32))
+            //     });
+            // }
+            // table.set_items(items);
+            //         }
+            //     );
+                s.call_on_name("sysinfo", |sysinfo: &mut TextView| {
+                    let mut new_sysinfo = String::new();
+                    new_sysinfo = getsystemstring();
+                    sysinfo.set_content(new_sysinfo);
+                });
+                })
+            )
+                .unwrap();
+        }
+        cb_sink.send(Box::new(|s| s.quit())).unwrap();
     });
 
-    layout.add_child(Dialog::around((systeminfo.with_name("sysinfo").min_height(3).max_height(3).min_width(120).max_width(120))).title("SYSTEM INFO"));
-    layout.add_child(Dialog::around(table.with_name("table").min_height(20).max_height(30).min_width(120)).title("PROCESS TABLE"));
-    layout.add_child(Dialog::around((helpdesk.min_height(1).max_height(1).min_width(120)).max_width(120)).title("HELP DESK")); 
+   // siv.run();
+
+
+    // table.set_on_sort(|siv: &mut Cursive, column: BasicColumn, order: Ordering| {
+    //     siv.add_layer(
+    //         Dialog::around(TextView::new(format!("{} / {:?}", column.as_str(), order)))
+    //             .title("Sorted by")
+    //             .button("Close", |s| {
+    //                 s.pop_layer();
+    //             }),
+    //     );
+    // });
+
+    layout.add_child(Dialog::around((systeminfo.with_name("sysinfo").min_height(3).max_height(3).min_width(150).max_width(150))).title("SYSTEM INFO"));
+    layout.add_child(Dialog::around(table.with_name("table").min_height(30).max_height(40).min_width(150)).title("PROCESS TABLE"));
+    layout.add_child(Dialog::around((helpdesk.min_height(1).max_height(1).min_width(120)).max_width(150)).title("HELP DESK")); 
 
     siv.add_global_callback('q', |s| s.quit());
     siv.add_global_callback('r', |s| {
@@ -323,11 +384,12 @@ fn main() {
             table.set_items(items);
             table.set_selected_item(currentitem);
         });
-        s.call_on_name("sysinfo", |sysinfo: &mut TextView| {
-            let mut new_sysinfo = String::new();
-            new_sysinfo = getsystemstring();
-            sysinfo.set_content(new_sysinfo);
-        });
+        // updating system info already updates every second
+        // s.call_on_name("sysinfo", |sysinfo: &mut TextView| {
+        //     let mut new_sysinfo = String::new();
+        //     new_sysinfo = getsystemstring();
+        //     sysinfo.set_content(new_sysinfo);
+        // });
     });
     siv.add_global_callback('h', |s|{
         let mut string:String = "\n".to_string();
@@ -388,13 +450,14 @@ fn main() {
         });
     });
     siv.add_global_callback('d', |s|{
-        s.load_toml(include_str!("/home/sara/Documents/GitHub/-The-Linux-Process-Manager/themedark.toml")).unwrap();
+        s.load_toml(include_str!("/home/sara/Desktop/lpm/The-Linux-Process-Manager/themedark.toml")).unwrap();
     });
     siv.add_global_callback('l', |s|{
-        s.load_toml(include_str!("/home/sara/Documents/GitHub/-The-Linux-Process-Manager/theme.toml")).unwrap();
+        s.load_toml(include_str!("/home/sara/Desktop/lpm/The-Linux-Process-Manager/theme.toml")).unwrap();
     });
     siv.add_layer(layout);
     
     //siv.add_layer(Dialog::around(table.with_name("table").min_height(50).min_width(150)).title("Process Table"));
     siv.run();
 }
+
