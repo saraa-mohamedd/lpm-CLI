@@ -8,7 +8,7 @@ is a rust-based command-line interface task manager implemented for linux based 
 ```cd``` into the project directory\
 run ```cargo install``` to download dependencies\
 run ```cargo build``` to build the program\
-run ```cargo install --path``` to download the binary executable\
+run ```cargo install --path``` to download the binary executable file
 
 #### From any terminal on your Linux based system
 
